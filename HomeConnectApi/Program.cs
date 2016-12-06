@@ -82,7 +82,8 @@ namespace HomeConnectApi
         public string value { get; set; }
         [JsonProperty("unit")]
         public string unit { get; set; }
-
+        // empty constructor
+        public Setting() { }
         public Setting(string _key, string _value)
         {
             key = _key;
@@ -155,46 +156,42 @@ namespace HomeConnectApi
             string idAccessToken = AccessToken.accessToken;
 
             // Save the connected HomeAppliances 
-            var task1 = EnumerateHomeAppliances(AccessToken.accessToken);
+            var task1 = EnumerateHomeAppliances(idAccessToken);
             var homeAppliances = await task1;
+            // haid of Oven
+            string stringHaidOven = homeAppliances[4].haid;
             foreach (var appliance in homeAppliances)
             {
-                Console.WriteLine(appliance.type);
-            }
-            string stringHaidOven = homeAppliances[4].haid;
+                var task3 = GetAvailableSettings(idAccessToken, appliance.haid);
+                var settings = await task3;
+                Console.Write("\n"+appliance.name +"\n");
+                for (int i = 0; i < settings.Count; i++)
+                {
+                    Console.WriteLine(settings[i].key);
+                }
+                Console.Write("\n");
+            }            
 
-            //var task2 = GetCurrentStatusOfHomeAppliance(AccessToken.accessToken, homeAppliances[0].haid);
-            //var StatusList = await task2;
-
-            // Get available settings of oven 
-            var task4 = GetAvailableSettings(AccessToken.accessToken, homeAppliances[3].haid);
-            var settings = await task4;
-            foreach (var setting in settings)
+            var task4 = GetAllOptionsOfSelectedProgram(idAccessToken, stringHaidOven);
+            var options = await task4;
+            for (int i = 0; i < options.Count; i++)
             {
-                //Console.WriteLine("Before the set call");
-                //Console.WriteLine("key: " + setting.key + "\nvalue: " + setting.value);
-            }
-
-            /*
-            var task5 = GetExecutedProgram(AccessToken.accessToken, homeAppliances[4].haid);
-            var result = await task5;
-            Console.WriteLine(result.name);
-            foreach (var option in result.programOptions)
-            {
-                Console.WriteLine("key: " + option.key + "\nvalue: " + option.value + "\nunit: " + option.unit);
-            }*/
-
-            var task7 = GetAllAvailablePrograms(idAccessToken, stringHaidOven);
-            var availableProgramNames = await task7;
-            foreach (var programName in availableProgramNames)
-            {
-                Console.WriteLine(programName.name);
+                if (options[i].key == "BSH.Common.Option.Duration")
+                {
+                    TimeSpan t = TimeSpan.FromSeconds(options[i].value);
+                    string str = t.ToString(@"hh\:mm");
+                    //Console.WriteLine("Eingestellte Zeit: " + str + " minutes ");
+                }
             }
 
-            var task8 = GetSpecificAvailableProgram(idAccessToken, stringHaidOven, availableProgramNames[0].name);
+            var task5 = GetSpecificOptionOfSelectedProgram(idAccessToken, stringHaidOven, options[0].key);
+            var option = await task5;
+            //Console.WriteLine("Juhu"+option);
 
         }
+        
         // ACCESS TOKEN
+        // ------------
         /// <summary>
         /// Get Access Token
         /// </summary>
@@ -264,6 +261,7 @@ namespace HomeConnectApi
             
         }
         // ENUMERATE HOME APPLIANCES
+        // -------------------------
         /// <summary>
         /// Get a list of all the connected HomeAppliances        
         /// </summary>
@@ -299,6 +297,7 @@ namespace HomeConnectApi
                 return homeAppliancesJsonList;
             }
         }
+        // STATUS
         /// <summary>
         /// Get current status of one specific home appliance.
         /// Usually a key<>value pair of information about the status itself and its value
@@ -306,8 +305,7 @@ namespace HomeConnectApi
         /// </summary>
         /// <param name="accessToken"></param>
         /// <param name="haid">Home Appliance Identifier</param>
-        /// <returns>A list of Status Objects</returns>
-        // STATUS
+        /// <returns>A list of Status Objects</returns>        
         public static async Task<List<Status>> GetCurrentStatusOfHomeAppliance(string accessToken, string haid)
         {
             List<Status> status = new List<Status>();
@@ -328,7 +326,7 @@ namespace HomeConnectApi
                 }
                 else
                 {
-                    Debug.WriteLine(response.ErrorMessage);
+                    Console.WriteLine(response.Content);
                 }
                 return status;
             }
@@ -339,12 +337,50 @@ namespace HomeConnectApi
             }
         }
         /// <summary>
+        /// Get a specific status of one HomeAppliance
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <param name="statusKey">statusKey which is wished to investigate</param>
+        /// <returns>Status Object</returns>
+        public static async Task<Status> GetSpecificCurrentStatusOfHomeAppliance(string accessToken, string haid, string statusKey)
+        {
+            Status status = new Status();
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = string.Format("/api/homeappliances/{0}/status/{1}",haid,statusKey);
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Authorization", string.Format("Bearer {0}", accessToken));
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+                if(response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
+                    status = JsonConvert.DeserializeObject<Status>(data.ToString());                                        
+                }
+                else
+                {
+                    Console.WriteLine(response.Content);
+                }
+                return status;
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return status;
+            }
+        }
+        
+        // PROGRAMS
+        // --------
+        // GET /homeappliances/{haid}/programs/available
+        /// <summary>
         /// Get all programs which are currently available on the given home appliance
         /// </summary>
         /// <param name="accessToken"></param>
         /// <param name="haid"></param>
         /// <returns></returns>
-        // PROGRAMS
         public static async Task<List<NameOfProgram>> GetAllAvailablePrograms(string accessToken, string haid)
         {
             List<NameOfProgram> nameOfProgram = new List<NameOfProgram>();
@@ -377,6 +413,7 @@ namespace HomeConnectApi
                 throw e;
             }
         }
+        // GET /homeappliances/{haid}/programs/available/{programkey}
         /// <summary>
         /// Get specific available program
         /// </summary>
@@ -415,47 +452,8 @@ namespace HomeConnectApi
                 return program;
             }
         }
-        /// <summary>
-        /// Get program which is currently executed
-        /// </summary>
-        /// <param name="accessToken"></param>
-        /// <param name="haid"></param>
-        /// <returns>Program Object containing a list of all the options</returns>
-        public static async Task<Program> GetExecutedProgram(string accessToken, string haid)
-        {
-            Program program = new Program("No program running");
-            try
-            {
-                var client = new RestClient(baseUrl);
-                var request = new RestRequest(Method.GET);
-                request.Resource = string.Format("/api/homeappliances/{0}/programs/active", haid);
-                request.AddHeader("Authorization", string.Format("Bearer {0}", accessToken));
-                request.AddHeader("Accept", content_type);
-                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
-
-                if (response.StatusCode == System.Net.HttpStatusCode.OK)
-                {
-                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
-                    var name = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["key"];
-                    var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["options"];
-                    List<ProgramOptions> programOptions = new List<ProgramOptions>();
-                    programOptions = JsonConvert.DeserializeObject<List<ProgramOptions>>(options.ToString());
-                    program.name = name.ToString();
-                    program.programOptions = programOptions;
-                    return program;
-                }
-                else
-                {
-                    Console.WriteLine(response.Content);
-                    return program;
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.WriteLine(e.ToString());
-                return program;
-            }
-        }
+        
+        // GET /homeappliances/{haid}/programs/selected
         /// <summary>
         /// Get the program which is currently selected
         /// </summary>
@@ -497,6 +495,121 @@ namespace HomeConnectApi
                 throw e;
             }
         }
+        // GET /homeappliances/{haid}/programs/selected/options
+        /// <summary>
+        /// Get all options of the selected program
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <returns></returns>
+        public static async Task<List<ProgramOptions>> GetAllOptionsOfSelectedProgram(string accessToken, string haid)
+        {
+            List<ProgramOptions> options = new List<ProgramOptions>();
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = "/api/homeappliances/" + haid + "/programs/selected/options/";
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Authorization", "Bearer " + accessToken);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+                if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string,object>>>(response.Content)["data"]["options"];                    
+                    options = JsonConvert.DeserializeObject<List<ProgramOptions>>(data.ToString());
+                }
+                else
+                {
+                    Console.WriteLine("Error: \n" + response.Content);
+                }
+                return options;
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return options;
+            }
+        }
+        // GET /homeappliances/{haid}/programs/selected/options/{optionkey}
+        /// <summary>
+        /// Get specific Option of selected program
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <param name="optionKey"></param>
+        /// <returns>ProgramOptions Object to the selected program</returns>
+        public static async Task<ProgramOptions> GetSpecificOptionOfSelectedProgram(string accessToken, string haid, string optionKey)
+        {
+            ProgramOptions option = new ProgramOptions();
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = "/api/homeappliances/" + haid + "/programs/selected/options/" + optionKey;
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Authorization", "Bearer " + accessToken);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+                if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
+                    option = JsonConvert.DeserializeObject<ProgramOptions>(data.ToString());
+                }
+                else
+                {
+                    Console.WriteLine("Error: \n" + response.Content);
+                }
+                return option;
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return option;
+            }
+        }
+
+        // GET /homeappliances/{haid}/programs/active
+        /// <summary>
+        /// Get program which is currently executed
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <returns>Program Object containing a list of all the options</returns>
+        public static async Task<Program> GetExecutedProgram(string accessToken, string haid)
+        {
+            Program program = new Program("No program running");
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = string.Format("/api/homeappliances/{0}/programs/active", haid);
+                request.AddHeader("Authorization", string.Format("Bearer {0}", accessToken));
+                request.AddHeader("Accept", content_type);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+
+                if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
+                    var name = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["key"];
+                    var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["options"];
+                    List<ProgramOptions> programOptions = new List<ProgramOptions>();
+                    programOptions = JsonConvert.DeserializeObject<List<ProgramOptions>>(options.ToString());
+                    program.name = name.ToString();
+                    program.programOptions = programOptions;
+                    return program;
+                }
+                else
+                {
+                    Console.WriteLine(response.Content);
+                    return program;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return program;
+            }
+        }
+        // DELETE /homeappliances/{haid}/programs/active
         /// <summary>
         /// Stop the program which is currently executed
         /// </summary>
@@ -520,7 +633,85 @@ namespace HomeConnectApi
                 Console.WriteLine(response.Content);
             }
         }
+        // PUT /homeappliances/{haid}/programs/active
+        public static async Task StartGivenProgram(string accessToken, string haid, string body)
+        {
+
+        }
+        // GET /homeappliances/{haid}/programs/active/options
+        /// <summary>
+        /// Get all options of the active program like temerature or duration
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <returns>A list of ProgramOptions Objects</returns>
+        public static async Task<List<ProgramOptions>> GetOptionsOfActiveProgram(string accessToken, string haid)
+        {
+            List<ProgramOptions> options = new List<ProgramOptions>();
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = "/api/homeappliances/" + haid + "/programs/active/options";
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Authorization", "Bearer " + accessToken);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+                if(response.StatusCode == System.Net.HttpStatusCode.OK)
+                {                    
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, object>>>(response.Content)["data"]["options"];                    
+                    options = JsonConvert.DeserializeObject<List<ProgramOptions>>(data.ToString());
+                }
+                else
+                {
+                    Console.WriteLine("Error:\n"+response.Content);
+                }
+                return options;
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return options;
+            }
+        }
+        // GET /homeappliances/{haid}/programs/active/options/{optionkey}
+        /// <summary>
+        /// Get one specific option of the active progra, e.g. the duration
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <param name="optionKey">The key of the desired option paramter</param>
+        /// <returns>ProgramOptiony Object</returns>
+        public static async Task<ProgramOptions> GetSpecificOptionOfActiveProgram(string accessToken, string haid, string optionKey)
+        {
+            ProgramOptions option = new ProgramOptions();
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = "/api/homeappliances/" + haid + "/programs/active/options/" + optionKey;
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Authorization", "Bearer " + accessToken);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+                if(response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
+                    option = JsonConvert.DeserializeObject<ProgramOptions>(data.ToString());
+                }
+                else
+                {
+                    Console.WriteLine("Error: \n" + response.Content);
+                }
+                return option;
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return option;
+            }
+        }
+
         // SETTINGS
+        // --------
         /// <summary>
         /// Get a list of available settings
         /// </summary>
@@ -555,6 +746,37 @@ namespace HomeConnectApi
             {
                 Debug.WriteLine(e.ToString());
                 return settingList;                
+            }
+        }
+        /// <summary>
+        /// Get a specific setting 
+        /// </summary>
+        /// <param name="accessToken"></param>
+        /// <param name="haid"></param>
+        /// <param name="settingKey"></param>
+        /// <returns>Setting Object</returns>
+        public static async Task<Setting> GetSpecificSetting(string accessToken, string haid, string settingKey)
+        {
+            Setting setting = new Setting();
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.GET);
+                request.Resource = "/api/homeappliances/" + haid + "/settings/" + settingKey;
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Authorization", "Bearer " + accessToken);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+                if(response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
+                    setting = JsonConvert.DeserializeObject<Setting>(data.ToString());
+                }
+                return setting;
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+                return setting;
             }
         }
         /// <summary>
