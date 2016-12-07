@@ -104,11 +104,13 @@ namespace HomeConnectApi
         }
 
     }
+
     public class NameOfProgram
     {   
         [JsonProperty("key")]
         public string name { get; set; }
     }
+
     public class ProgramOptions
     {
         [JsonProperty("key")]
@@ -121,6 +123,7 @@ namespace HomeConnectApi
         public string unit { get; set; }
         public ProgrammConstraints constraints { get; set; } 
     }
+
     public class ProgrammConstraints
     {
         [JsonProperty("min")]
@@ -139,57 +142,40 @@ namespace HomeConnectApi
         static private string redirect_url = "https://apiclient.home-connect.com/o2c.html";
         // Content-Type
         static private string content_type = "application/vnd.bsh.sdk.v1+json";
+        static private string code = "FB0655D295F2884B9D9DC9A37AF07D72E7031CAC258DAEDE7F06D0F7586F6F14";
 
         static void Main()
-        {
+        { 
             Task task = new Task(Start);
             task.Start();
             task.Wait();
             Console.ReadLine();
+          
         }
         public static async void Start()
         {
-            var task = GetAccessToken();
-            Console.WriteLine("Please wait...");
-            var AccessToken = await task;
-            Console.WriteLine("AccessToken = " + AccessToken.accessToken + "\nScope: " + AccessToken.scope);
-            string idAccessToken = AccessToken.accessToken;
-
-            // Save the connected HomeAppliances 
-            var task1 = EnumerateHomeAppliances(idAccessToken);
-            var homeAppliances = await task1;
-            // haid of Oven
-            string stringHaidOven = homeAppliances[4].haid;
-            foreach (var appliance in homeAppliances)
+            using (HttpClient client = new HttpClient())                            
             {
-                var task3 = GetAvailableSettings(idAccessToken, appliance.haid);
-                var settings = await task3;
-                Console.Write("\n"+appliance.name +"\n");
-                for (int i = 0; i < settings.Count; i++)
+                var parameters = new Dictionary<string, string> { { "client_id", client_id }, {"redirect_uri", redirect_url }, {"grant_type", "authorization_code" }, { "code", code } };
+                var encodedContent = new FormUrlEncodedContent(parameters);
+                
+                var response = await client.PostAsync(baseUrl, encodedContent);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.OK)
                 {
-                    Console.WriteLine(settings[i].key);
+                    string content = await response.Content.ReadAsStringAsync();
+                    AccessToken accessToken = new AccessToken();
+                    
+                    accessToken = JsonConvert.DeserializeObject<AccessToken>(content);
+                    Console.WriteLine(accessToken.accessToken);
                 }
-                Console.Write("\n");
-            }            
-
-            var task4 = GetAllOptionsOfSelectedProgram(idAccessToken, stringHaidOven);
-            var options = await task4;
-            for (int i = 0; i < options.Count; i++)
-            {
-                if (options[i].key == "BSH.Common.Option.Duration")
+                else
                 {
-                    TimeSpan t = TimeSpan.FromSeconds(options[i].value);
-                    string str = t.ToString(@"hh\:mm");
-                    //Console.WriteLine("Eingestellte Zeit: " + str + " minutes ");
+                    Console.WriteLine(response.StatusCode);
                 }
             }
-
-            var task5 = GetSpecificOptionOfSelectedProgram(idAccessToken, stringHaidOven, options[0].key);
-            var option = await task5;
-            //Console.WriteLine("Juhu"+option);
-
         }
-        
+
         // ACCESS TOKEN
         // ------------
         /// <summary>
@@ -298,6 +284,7 @@ namespace HomeConnectApi
             }
         }
         // STATUS
+        // ------
         /// <summary>
         /// Get current status of one specific home appliance.
         /// Usually a key<>value pair of information about the status itself and its value
@@ -636,7 +623,62 @@ namespace HomeConnectApi
         // PUT /homeappliances/{haid}/programs/active
         public static async Task StartGivenProgram(string accessToken, string haid, string body)
         {
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.PUT);
+                request.Resource = string.Format("/api/homeappliances/{0}/programs/active", haid);
+                request.AddHeader("Authorization", string.Format("Bearer {0}", accessToken));
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Content-Type", content_type);
+                // Request Body
+                request.Parameters.Clear();
+                request.AddParameter(content_type, body, ParameterType.RequestBody);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
 
+                if ((int)response.StatusCode == 204)
+                {
+                    Console.WriteLine(response.Content);                              
+                }
+                else
+                {
+                    Console.WriteLine(response.Content);                    
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());                
+            }
+        }
+        // PUT /homeappliances/{haid}/programs/selected
+        public static async Task SelectProgram(string accessToken, string haid, string body)
+        {
+            try
+            {
+                var client = new RestClient(baseUrl);
+                var request = new RestRequest(Method.PUT);
+                request.Resource = string.Format("/api/homeappliances/{0}/programs/selected", haid);
+                request.AddHeader("Authorization", string.Format("Bearer {0}", accessToken));
+                request.AddHeader("Accept", content_type);
+                request.AddHeader("Content-Type", content_type);
+                // Request Body
+                request.Parameters.Clear();
+                request.AddParameter(content_type, body, ParameterType.RequestBody);
+                RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
+
+                if ((int)response.StatusCode == 204)
+                {
+                    Console.WriteLine(response.Content);
+                }
+                else
+                {
+                    Console.WriteLine(response.Content);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.ToString());
+            }
         }
         // GET /homeappliances/{haid}/programs/active/options
         /// <summary>
