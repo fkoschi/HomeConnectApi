@@ -91,14 +91,14 @@ namespace HomeConnectApi
         }
     }
 
-    public class Program
+    public class RestSharp
     {
         [JsonProperty("key")]
         public string name { get; set; }
         [JsonProperty("options")]
         public List<ProgramOptions> programOptions { get; set; }
         
-        public Program(string _name)
+        public RestSharp(string _name)
         {
             name = _name;
         }
@@ -132,9 +132,20 @@ namespace HomeConnectApi
         public int max { get; set; }
     }
 
-    class HomeConnect
+    class HomeConnectRestSharp
     {
+        // AccessToken 
+        static public AccessToken oAccessToken = new AccessToken();
+        // Home Appliances
+        static public HomeAppliance Oven = new HomeAppliance();
+        static public HomeAppliance Dishwasher = new HomeAppliance();
+        static public HomeAppliance FridgeFreezer = new HomeAppliance();
+        static public HomeAppliance CoffeeMaker = new HomeAppliance();
+        static public HomeAppliance Dryer = new HomeAppliance();
+        static public HomeAppliance Washer = new HomeAppliance();
+
         // Base URL 
+        static Uri baseUri = new Uri("https://developer.home-connect.com");
         static string baseUrl = "https://developer.home-connect.com";
         // Client_ID
         static private string client_id = "434AB33977AF19E6B34F7C4FFE7983BF2D7826D4872E8F56AD0782DEAEED2DB2";
@@ -142,37 +153,77 @@ namespace HomeConnectApi
         static private string redirect_url = "https://apiclient.home-connect.com/o2c.html";
         // Content-Type
         static private string content_type = "application/vnd.bsh.sdk.v1+json";
+        // Code 
         static private string code = "FB0655D295F2884B9D9DC9A37AF07D72E7031CAC258DAEDE7F06D0F7586F6F14";
 
         static void Main()
-        { 
-            Task task = new Task(Start);
-            task.Start();
-            task.Wait();
-            Console.ReadLine();
-          
-        }
-        public static async void Start()
         {
-            using (HttpClient client = new HttpClient())                            
+            // Initialize accessToken as Object
+            oAccessToken = GetAccessToken().Result;
+            // Get all connected home appliances 
+            var lHomeAppliances = EnumerateHomeAppliances(oAccessToken.accessToken).Result;
+            // Assign one appliance to the related object
+            foreach (var oHomeAppliance in lHomeAppliances)
             {
-                var parameters = new Dictionary<string, string> { { "client_id", client_id }, {"redirect_uri", redirect_url }, {"grant_type", "authorization_code" }, { "code", code } };
-                var encodedContent = new FormUrlEncodedContent(parameters);
-                
-                var response = await client.PostAsync(baseUrl, encodedContent);
+                if (oHomeAppliance.type == "Oven")
+                {
+                    Oven = oHomeAppliance;
+                }
+                else if (oHomeAppliance.type == "Dishwasher")
+                {
+                    Dishwasher = oHomeAppliance;
+                }
+                else if (oHomeAppliance.type == "FridgeFreezer")
+                {
+                    FridgeFreezer = oHomeAppliance;
+                }
+                else if (oHomeAppliance.type == "CoffeeMaker")
+                {
+                    CoffeeMaker = oHomeAppliance;
+                }
+            }
+
+            var lStatus = HomeConnectHttpClient.GetCurrentStatusOfHomeAppliance(oAccessToken.accessToken, Oven.haid).Result;
+            if(lStatus.Count > 0)
+            {
+                foreach (var status in lStatus)
+                {
+                    if(status.key == "BSH.Common.Status.RemoteControlStartAllowed")
+                    {
+                        Console.WriteLine(status.key + "\n" + status.value);
+                    }                    
+                }
+            }
+            
+        }
+        public static async void TestAsync()
+        {
+            
+        }
+        // This function/area is used for testing purposes 
+        public static async Task<Status> _SpecificStatus(string accessToken, string haid, string statusKey)
+        {
+            Status status = new Status();
+            using (HttpClient client = new HttpClient())
+            {
+                client.BaseAddress = baseUri;
+                client.DefaultRequestHeaders.Accept.Clear();
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(content_type));
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                var response = await client.GetAsync("/api/homeappliances/" + haid + "/status/" + statusKey);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.OK)
                 {
                     string content = await response.Content.ReadAsStringAsync();
-                    AccessToken accessToken = new AccessToken();
-                    
-                    accessToken = JsonConvert.DeserializeObject<AccessToken>(content);
-                    Console.WriteLine(accessToken.accessToken);
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(content)["data"];
+                    status = JsonConvert.DeserializeObject<Status>(data.ToString());
                 }
                 else
                 {
-                    Console.WriteLine(response.StatusCode);
+                    System.Diagnostics.Debug.WriteLine("Nothing found ... ");
                 }
+                return status;
             }
         }
 
@@ -408,9 +459,9 @@ namespace HomeConnectApi
         /// <param name="haid"></param>
         /// <param name="programKey">Key of the program</param>
         /// <returns>Program Object</returns>
-        public static async Task<Program> GetSpecificAvailableProgram(string accessToken, string haid, string programKey)
+        public static async Task<RestSharp> GetSpecificAvailableProgram(string accessToken, string haid, string programKey)
         {
-            Program program = new Program(programKey);
+            RestSharp program = new RestSharp(programKey);
 
             try
             {
@@ -423,7 +474,7 @@ namespace HomeConnectApi
                 if (response.StatusCode == System.Net.HttpStatusCode.OK)
                 {
                     var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
-                    program = JsonConvert.DeserializeObject<Program>(options.ToString());
+                    program = JsonConvert.DeserializeObject<RestSharp>(options.ToString());
                                         
                     return program;
                 }
@@ -447,9 +498,9 @@ namespace HomeConnectApi
         /// <param name="accessToken"></param>
         /// <param name="haid"></param>
         /// <returns>Program Object containing a list of all the options</returns>
-        public static async Task<Program> GetSelectedProgram(string accessToken, string haid)
+        public static async Task<RestSharp> GetSelectedProgram(string accessToken, string haid)
         {
-            Program program = new Program("No selected program");
+            RestSharp program = new RestSharp("No selected program");
 
             try
             {
@@ -561,9 +612,9 @@ namespace HomeConnectApi
         /// <param name="accessToken"></param>
         /// <param name="haid"></param>
         /// <returns>Program Object containing a list of all the options</returns>
-        public static async Task<Program> GetExecutedProgram(string accessToken, string haid)
+        public static async Task<RestSharp> GetExecutedProgram(string accessToken, string haid)
         {
-            Program program = new Program("No program running");
+            RestSharp program = new RestSharp("No program running");
             try
             {
                 var client = new RestClient(baseUrl);
