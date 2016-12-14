@@ -91,14 +91,14 @@ namespace HomeConnectApi
         }
     }
 
-    public class RestSharp
+    public class Program
     {
         [JsonProperty("key")]
         public string name { get; set; }
         [JsonProperty("options")]
         public List<ProgramOptions> programOptions { get; set; }
         
-        public RestSharp(string _name)
+        public Program(string _name)
         {
             name = _name;
         }
@@ -156,8 +156,8 @@ namespace HomeConnectApi
         // Code 
         static private string code = "FB0655D295F2884B9D9DC9A37AF07D72E7031CAC258DAEDE7F06D0F7586F6F14";
 
-        static void Main()
-        {
+        static void Start()
+        {            
             // Initialize accessToken as Object
             oAccessToken = GetAccessToken().Result;
             // Get all connected home appliances 
@@ -459,9 +459,9 @@ namespace HomeConnectApi
         /// <param name="haid"></param>
         /// <param name="programKey">Key of the program</param>
         /// <returns>Program Object</returns>
-        public static async Task<RestSharp> GetSpecificAvailableProgram(string accessToken, string haid, string programKey)
+        public static async Task<Program> GetSpecificAvailableProgram(string accessToken, string haid, string programKey)
         {
-            RestSharp program = new RestSharp(programKey);
+            Program program = new Program(programKey);
 
             try
             {
@@ -474,7 +474,7 @@ namespace HomeConnectApi
                 if (response.StatusCode == System.Net.HttpStatusCode.OK)
                 {
                     var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
-                    program = JsonConvert.DeserializeObject<RestSharp>(options.ToString());
+                    program = JsonConvert.DeserializeObject<Program>(options.ToString());
                                         
                     return program;
                 }
@@ -498,9 +498,9 @@ namespace HomeConnectApi
         /// <param name="accessToken"></param>
         /// <param name="haid"></param>
         /// <returns>Program Object containing a list of all the options</returns>
-        public static async Task<RestSharp> GetSelectedProgram(string accessToken, string haid)
+        public static async Task<Program> GetSelectedProgram(string accessToken, string haid)
         {
-            RestSharp program = new RestSharp("No selected program");
+            Program program = new Program("No selected program");
 
             try
             {
@@ -612,9 +612,9 @@ namespace HomeConnectApi
         /// <param name="accessToken"></param>
         /// <param name="haid"></param>
         /// <returns>Program Object containing a list of all the options</returns>
-        public static async Task<RestSharp> GetExecutedProgram(string accessToken, string haid)
+        public static async Task<Program> GetExecutedProgram(string accessToken, string haid)
         {
-            RestSharp program = new RestSharp("No program running");
+            Program program = new Program("No program running");
             try
             {
                 var client = new RestClient(baseUrl);

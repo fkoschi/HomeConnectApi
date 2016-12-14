@@ -78,6 +78,40 @@ public class HomeConnectHttpClient
         public string unit { get; set; }
     }
 
+    public class Program
+    {
+        [JsonProperty("key")]
+        public string name { get; set; }
+        [JsonProperty("options")]
+        public List<ProgramOptions> programOptions { get; set; }
+
+        public Program(string _name)
+        {
+            name = _name;
+        }
+    }
+
+    public class ProgramOptions
+    {
+        [JsonProperty("key")]
+        public string key { get; set; }
+        [JsonProperty("type")]
+        public string type { get; set; }
+        [JsonProperty("value")]
+        public int value { get; set; }
+        [JsonProperty("unit")]
+        public string unit { get; set; }
+        public ProgramConstraints constraints { get; set; }
+    }
+
+    public class ProgramConstraints
+    {
+        [JsonProperty("min")]
+        public int min { get; set; }
+        [JsonProperty("max")]
+        public int max { get; set; }
+    }
+
     // AccessToken 
     static public AccessToken oAccessToken = new AccessToken();
     // Home Appliances
@@ -102,8 +136,8 @@ public class HomeConnectHttpClient
 
 
     // Use this for initialization
-    void Start () {
-
+    static void Main () {
+        Console.WriteLine("Hello Main");
         // Initialize accessToken as Object
         oAccessToken = getAccessToken().Result;
         // AccessToken available
@@ -134,7 +168,17 @@ public class HomeConnectHttpClient
                     }
                 }
             }
-        }              
+
+            // Get selected Program of oven 
+            var selectedProgram = GetSelectedProgram(oAccessToken.accessToken, Oven.haid).Result;
+            foreach (var option in selectedProgram.programOptions)
+            {
+                Console.WriteLine(option.key + option.value);
+            }
+            
+        }
+
+        Console.ReadLine();      
     }
 
     // Update is called once per frame
@@ -296,5 +340,40 @@ public class HomeConnectHttpClient
             return status;
         }
     }
+    /// <summary>
+    /// Get the program which is currently selected
+    /// </summary>
+    /// <param name="accessToken">AccessToken</param>
+    /// <param name="haid">HomeApplianceID</param>
+    /// <returns>Program Object containing a list of all the options</returns>
+    public static async Task<Program> GetSelectedProgram(string accessToken, string haid)
+    {
+        Program program = new Program("No selected program");
+        using (HttpClient client = new HttpClient())
+        {
+            client.BaseAddress = baseUri;
+            client.DefaultRequestHeaders.Accept.Clear();
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(content_type));
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
+            var response = await client.GetAsync("/api/homeappliances/" + haid + "/programs/selected");
+
+            if (response.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+                string content = await response.Content.ReadAsStringAsync();
+                var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(content)["data"];
+                var name = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["key"];
+                var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["options"];
+                List<ProgramOptions> programOptions = new List<ProgramOptions>();
+                programOptions = JsonConvert.DeserializeObject<List<ProgramOptions>>(options.ToString());
+                program.name = name.ToString();
+                program.programOptions = programOptions;
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Nothing found ... ");
+            }
+            return program;
+        }           
+    }
 }
