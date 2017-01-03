@@ -84,7 +84,7 @@ public class HomeConnectHttpClient
         public string name { get; set; }
         [JsonProperty("options")]
         public List<ProgramOptions> programOptions { get; set; }
-
+        public Program() { }
         public Program(string _name)
         {
             name = _name;
@@ -98,7 +98,7 @@ public class HomeConnectHttpClient
         [JsonProperty("type")]
         public string type { get; set; }
         [JsonProperty("value")]
-        public int value { get; set; }
+        public object value { get; set; }
         [JsonProperty("unit")]
         public string unit { get; set; }
         public ProgramConstraints constraints { get; set; }
@@ -110,6 +110,23 @@ public class HomeConnectHttpClient
         public int min { get; set; }
         [JsonProperty("max")]
         public int max { get; set; }
+    }
+
+    public class Setting
+    {
+        [JsonProperty("key")]
+        public string key { get; set; }
+        [JsonProperty("value")]
+        public string value { get; set; }
+        [JsonProperty("unit")]
+        public string unit { get; set; }
+        // empty constructor
+        public Setting() { }
+        public Setting(string _key, string _value)
+        {
+            key = _key;
+            value = _value;
+        }
     }
 
     // AccessToken 
@@ -169,16 +186,30 @@ public class HomeConnectHttpClient
                 }
             }
 
-            // Get selected Program of oven 
-            var selectedProgram = GetSelectedProgram(oAccessToken.accessToken, Oven.haid).Result;
-            foreach (var option in selectedProgram.programOptions)
-            {
-                Console.WriteLine(option.key + option.value);
-            }
-            
-        }
+            Program program = new Program();            
+            program.name = "Cooking.Oven.Program.HeatingMode.PizzaSetting";
+            ProgramOptions programOption1 = new ProgramOptions();
+            programOption1.key = "Cooking.Oven.Option.SetpointTemperature";
+            programOption1.value = 230;
+            programOption1.unit = "°C";
+            ProgramOptions programOption2 = new ProgramOptions();
+            programOption2.key = "BSH.Common.Option.Duration";
+            programOption2.value = 1200;
+            programOption2.unit = "seconds";
 
-        Console.ReadLine();      
+            List<ProgramOptions> programOptions = new List<ProgramOptions>();
+            programOptions.Add(programOption1);
+            programOptions.Add(programOption2);
+
+            program.programOptions = programOptions;
+
+            var data = JsonConvert.SerializeObject(new { data = program }, Newtonsoft.Json.Formatting.None, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+            string body = data.ToString();
+
+            var result = StartGivenProgram(oAccessToken.accessToken, Oven.haid, body);
+            
+            Console.ReadLine();
+        }        
     }
 
     // Update is called once per frame
@@ -351,29 +382,108 @@ public class HomeConnectHttpClient
         Program program = new Program("No selected program");
         using (HttpClient client = new HttpClient())
         {
+            try
+            {
+                client.BaseAddress = baseUri;
+                client.DefaultRequestHeaders.Accept.Clear();
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(content_type));
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                var response = await client.GetAsync("/api/homeappliances/" + haid + "/programs/selected");
+                
+                if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    string content = await response.Content.ReadAsStringAsync();                    
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(content)["data"];
+                    var name = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["key"];
+                    var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["options"];
+                    List<ProgramOptions> programOptions = new List<ProgramOptions>();
+                    programOptions = JsonConvert.DeserializeObject<List<ProgramOptions>>(options.ToString());
+                    program.name = name.ToString();
+                    program.programOptions = programOptions;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("Nothing found ... ");
+                }
+            }
+            catch(Exception e)
+            {
+                throw e;
+            }
+            
+            return program;
+        }           
+    }
+    /// <summary>
+    /// Get specific setting
+    /// </summary>
+    /// <param name="accessToken"></param>
+    /// <param name="haid"></param>
+    /// <param name="settingKey"></param>
+    /// <returns>Object containing the key and value of the setting</returns>
+    public static async Task<Setting> GetSpecificSetting(string accessToken, string haid, string settingKey)
+    {
+        Setting setting = new Setting();
+
+        using (HttpClient client = new HttpClient())
+        {
             client.BaseAddress = baseUri;
             client.DefaultRequestHeaders.Accept.Clear();
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(content_type));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-            var response = await client.GetAsync("/api/homeappliances/" + haid + "/programs/selected");
+            var response = await client.GetAsync("/api/homeappliances/" + haid + "/settings/" + settingKey);
 
             if (response.StatusCode == System.Net.HttpStatusCode.OK)
             {
                 string content = await response.Content.ReadAsStringAsync();
                 var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(content)["data"];
-                var name = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["key"];
-                var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["options"];
-                List<ProgramOptions> programOptions = new List<ProgramOptions>();
-                programOptions = JsonConvert.DeserializeObject<List<ProgramOptions>>(options.ToString());
-                program.name = name.ToString();
-                program.programOptions = programOptions;
+                setting = JsonConvert.DeserializeObject<Setting>(data.ToString());
             }
             else
             {
                 System.Diagnostics.Debug.WriteLine("Nothing found ... ");
             }
-            return program;
-        }           
+            return setting;
+        }
+    }
+    /// <summary>
+    /// Start a given program 
+    /// options have to be delivered as a function parameter
+    /// </summary>
+    /// <param name="accessToken"></param>
+    /// <param name="haid"></param>
+    /// <param name="body"></param>
+    /// <returns></returns>
+    public static async Task StartGivenProgram(string accessToken, string haid, string body)
+    {
+        using (HttpClient client = new HttpClient())
+        {
+            try
+            {
+                client.BaseAddress = baseUri;
+                client.DefaultRequestHeaders.Accept.Clear();
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(content_type));                                
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                HttpContent httpcontent = new StringContent(body);
+                httpcontent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(content_type);
+
+                HttpResponseMessage rpmsg = (await client.PutAsync("/api/homeappliances/" + haid + "/programs/active", httpcontent));
+                if(rpmsg.IsSuccessStatusCode)
+                {
+                    Console.WriteLine(rpmsg.StatusCode);
+                }
+                else
+                {
+                    Console.WriteLine(rpmsg.Content.ReadAsStringAsync().Result);
+                }                
+            }
+            catch (Exception e)
+            {
+                throw e;                
+            }
+        }
     }
 }

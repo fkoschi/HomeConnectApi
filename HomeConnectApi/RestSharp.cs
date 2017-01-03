@@ -9,6 +9,7 @@ using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using RestSharp;
 using System.Reflection;
+using System.IO;
 
 namespace HomeConnectApi
 {
@@ -97,7 +98,7 @@ namespace HomeConnectApi
         public string name { get; set; }
         [JsonProperty("options")]
         public List<ProgramOptions> programOptions { get; set; }
-        
+        public Program() { }
         public Program(string _name)
         {
             name = _name;
@@ -118,7 +119,7 @@ namespace HomeConnectApi
         [JsonProperty("type")]
         public string type { get; set; }
         [JsonProperty("value")]
-        public int value { get; set; }
+        public object value { get; set; }
         [JsonProperty("unit")]
         public string unit { get; set; }
         public ProgrammConstraints constraints { get; set; } 
@@ -156,6 +157,7 @@ namespace HomeConnectApi
         // Code 
         static private string code = "FB0655D295F2884B9D9DC9A37AF07D72E7031CAC258DAEDE7F06D0F7586F6F14";
 
+        
         static void Start()
         {            
             // Initialize accessToken as Object
@@ -184,22 +186,44 @@ namespace HomeConnectApi
             }
 
             var lStatus = HomeConnectHttpClient.GetCurrentStatusOfHomeAppliance(oAccessToken.accessToken, Oven.haid).Result;
-            if(lStatus.Count > 0)
+            if (lStatus.Count > 0)
             {
                 foreach (var status in lStatus)
                 {
-                    if(status.key == "BSH.Common.Status.RemoteControlStartAllowed")
+                    if (status.key == "BSH.Common.Status.RemoteControlStartAllowed")
                     {
-                        Console.WriteLine(status.key + "\n" + status.value);
-                    }                    
-                }
+                        //Console.WriteLine(status.key + "\n" + status.value);
+                    }
+
+                }               
             }
+
+            Program program = new Program();
+            program.name = "Cooking.Oven.Program.HeatingMode.HotAir";
+            ProgramOptions programOption1 = new ProgramOptions();
+            programOption1.key = "BSH.Common.Option.SetpointTemperature";
+            programOption1.value = 230;
+            programOption1.unit = "°C";
+            ProgramOptions programOption2 = new ProgramOptions();
+            programOption2.key = "BSH.Common.Option.Duration";
+            programOption2.value = 1200;
+            programOption2.unit = "seconds";
+
+            List<ProgramOptions> programOptions = new List<ProgramOptions>();
+            programOptions.Add(programOption1);
+            programOptions.Add(programOption2);
+
+            program.programOptions = programOptions;
+
+            var data = JsonConvert.SerializeObject(new { data = program }, Newtonsoft.Json.Formatting.None, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+            string body = data.ToString();
+
+            var result = StartGivenProgram(oAccessToken.accessToken, Oven.haid, data);
             
+            Console.ReadLine();
+
         }
-        public static async void TestAsync()
-        {
-            
-        }
+        
         // This function/area is used for testing purposes 
         public static async Task<Status> _SpecificStatus(string accessToken, string haid, string statusKey)
         {
@@ -513,12 +537,20 @@ namespace HomeConnectApi
                 if (response.StatusCode == System.Net.HttpStatusCode.OK)
                 {
                     var data = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content)["data"];
+                    Console.WriteLine(data);
+                    
                     var name = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["key"];
+                    Console.WriteLine(name);
+                    
                     var options = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString())["options"];
+                    Console.WriteLine(options);
+                    
                     List<ProgramOptions> programOptions = new List<ProgramOptions>();
                     programOptions = JsonConvert.DeserializeObject<List<ProgramOptions>>(options.ToString());
+                    
                     program.name = name.ToString();
                     program.programOptions = programOptions;
+                    
                     return program;
                 }
                 else
@@ -686,7 +718,7 @@ namespace HomeConnectApi
                 request.Parameters.Clear();
                 request.AddParameter(content_type, body, ParameterType.RequestBody);
                 RestResponse response = await client.ExecuteTaskAsync(request) as RestResponse;
-
+                Console.WriteLine(response.Content);
                 if ((int)response.StatusCode == 204)
                 {
                     Console.WriteLine(response.Content);                              
@@ -802,7 +834,12 @@ namespace HomeConnectApi
                 return option;
             }
         }
+        // PUT /homeappliances/{haid}/programs/active/options/{optionkey}
+        public static async Task SetSpecificOptionOfActiveProgram(string accessToken, string haid, string optionKey)
+        {
 
+        }        
+            
         // SETTINGS
         // --------
         /// <summary>
