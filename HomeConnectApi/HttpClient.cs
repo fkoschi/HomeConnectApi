@@ -1,15 +1,13 @@
 ﻿using System;
-using System.IO;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Text.RegularExpressions;
+
 
 public class HomeConnectHttpClient
 {
@@ -131,23 +129,6 @@ public class HomeConnectHttpClient
         }
     }
 
-    public class Event
-    {
-        public string eventName { get; set; }
-        public List<EventData> eventData { get; set; }
-        public string haid { get; set; }
-    }
-
-    public class EventData
-    {
-        public string key { get; set; }
-        public int timestamp { get; set; }
-        public string level { get; set; }
-        public string handling { get; set; }
-        public int value { get; set; }
-        public string unit { get; set; }
-    }
-
     // AccessToken 
     static public AccessToken oAccessToken = new AccessToken();
     // Home Appliances
@@ -168,15 +149,14 @@ public class HomeConnectHttpClient
     static private string content_type = "application/vnd.bsh.sdk.v1+json";
     // Code 
     static private string code = "FB0655D295F2884B9D9DC9A37AF07D72E7031CAC258DAEDE7F06D0F7586F6F14";
+    
+
 
     // Use this for initialization
     static void Main () {
-
-        Console.WriteLine("HttpClient");
-        
+        Console.WriteLine("Hello Main");
         // Initialize accessToken as Object
         oAccessToken = getAccessToken().Result;
-        Console.WriteLine(oAccessToken.accessToken);
         // AccessToken available
         if (oAccessToken != null)
         {
@@ -205,37 +185,34 @@ public class HomeConnectHttpClient
                     }
                 }
             }
-            var cavTempOven = GetSpecificCurrentStatusOfHomeAppliance(oAccessToken.accessToken, Oven.haid, "Cooking.Oven.Status.CurrentCavityTemperature").Result;
-            Console.WriteLine(cavTempOven.value);
+
+            Program program = new Program();            
+            program.name = "Cooking.Oven.Program.HeatingMode.PizzaSetting";
+            ProgramOptions programOption1 = new ProgramOptions();
+            programOption1.key = "Cooking.Oven.Option.SetpointTemperature";
+            programOption1.value = 230;
+            programOption1.unit = "°C";
+            ProgramOptions programOption2 = new ProgramOptions();
+            programOption2.key = "BSH.Common.Option.Duration";
+            programOption2.value = 1200;
+            programOption2.unit = "seconds";
+
+            List<ProgramOptions> programOptions = new List<ProgramOptions>();
+            programOptions.Add(programOption1);
+            programOptions.Add(programOption2);
+
+            program.programOptions = programOptions;
+
+            var data = JsonConvert.SerializeObject(new { data = program }, Newtonsoft.Json.Formatting.None, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+            string body = data.ToString();
+
+            var result = StartGivenProgram(oAccessToken.accessToken, Oven.haid, body);
+            
             Console.ReadLine();
         }        
     }
 
-    void startProgram()
-    {
-        Program program = new Program();
-        program.name = "Cooking.Oven.Program.HeatingMode.PizzaSetting";
-        ProgramOptions programOption1 = new ProgramOptions();
-        programOption1.key = "Cooking.Oven.Option.SetpointTemperature";
-        programOption1.value = 230;
-        programOption1.unit = "°C";
-        ProgramOptions programOption2 = new ProgramOptions();
-        programOption2.key = "BSH.Common.Option.Duration";
-        programOption2.value = 1200;
-        programOption2.unit = "seconds";
-
-        List<ProgramOptions> programOptions = new List<ProgramOptions>();
-        programOptions.Add(programOption1);
-        programOptions.Add(programOption2);
-
-        program.programOptions = programOptions;
-
-        var data = JsonConvert.SerializeObject(new { data = program }, Newtonsoft.Json.Formatting.None, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-        string body = data.ToString();
-
-        var result = StartGivenProgram(oAccessToken.accessToken, Oven.haid, body);
-    }
-    
+    // Update is called once per frame
     void Update () {
 	
 	}
@@ -507,111 +484,6 @@ public class HomeConnectHttpClient
             {
                 throw e;                
             }
-        }
-    }
-    /// <summary>
-    /// Stop the currently running program 
-    /// </summary>
-    /// <param name="accessToken">AccessToken</param>
-    /// <param name="haid">Haid of the appliance</param>
-    /// <returns>Response Message</returns>
-    public static async Task<bool> StopRunningProgram(string accessToken, string haid)
-    {        
-        using (HttpClient client = new HttpClient())
-        {
-            try
-            {
-                client.BaseAddress = baseUri;
-                client.DefaultRequestHeaders.Accept.Clear();
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(content_type));
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-                HttpResponseMessage rpmsg = (await client.DeleteAsync("/api/homeappliances/" + haid + "/programs/active"));
-
-                if (rpmsg.IsSuccessStatusCode)
-                {                    
-                    return true;
-                }
-                else
-                {
-                    return false;
-                }
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }
-        }
-    }
-    /// <summary>
-    /// Get Stream of Events 
-    /// NOTIFY  
-    /// STATUS
-    /// </summary>
-    /// <param name="accessToken">Access Token</param>
-    /// <param name="haid">Home Appliance Id</param>
-    /// <returns></returns>
-    public static async Task GetStreamOfEvents(string accessToken, string haid)
-    {
-        using (HttpClient client = new HttpClient())
-        {
-            try
-            {
-                client.Timeout = TimeSpan.FromMilliseconds(Timeout.Infinite);
-
-                client.BaseAddress = baseUri;
-                client.DefaultRequestHeaders.Accept.Clear();
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-                                
-                var request = new HttpRequestMessage(HttpMethod.Get, "/api/homeappliances/" + haid + "/events");
-                using (var response = await client.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead))
-                {
-                    using (var body = await response.Content.ReadAsStreamAsync())
-                    using (var reader = new StreamReader(body))                    
-                        while (!reader.EndOfStream)
-                        {   
-                            string data = reader.ReadLine();
-                            //Console.WriteLine(data + "\n");
-                           
-                            if(data.Contains("event:"))
-                            {
-                                string[] split = Regex.Split(data, "event: ");
-                                string splitEventName = split[1];                                
-                                Console.WriteLine(splitEventName);                            
-                            }
-                            if(data.Contains("data:"))
-                            {
-                                List<EventData> listEventData = new List<EventData>();
-                                string[] split = Regex.Split(data, "data: ");
-                                string jsonString = split[1];
-                                var items = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonString)["items"];
-                                listEventData = JsonConvert.DeserializeObject<List<EventData>>(items.ToString());                                
-                                foreach (var ev in listEventData)
-                                {
-                                    if (ev.key.Contains("Cooking.Oven.Status.CurrentCavityTemperature"))
-                                    {
-                                       Console.WriteLine("Aktuelle Temperatur ist " + ev.value + ev.unit);
-                                    }                                    
-                                }
-                                Console.WriteLine(listEventData);
-                            }                      
-                            if(data.Contains("id:"))
-                            {
-                                string[] split = Regex.Split(data, "id: ");
-                                string splitId = split[1];
-                                
-                                Console.WriteLine(splitId);
-                            }                                         
-                        }                    
-                }
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }            
         }
     }
 }
