@@ -7,7 +7,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Reflection;
-
+using System.Text.RegularExpressions;
+using System.IO;
+using System.Threading;
 
 public class HomeConnectHttpClient
 {
@@ -129,6 +131,23 @@ public class HomeConnectHttpClient
         }
     }
 
+    public class Event
+    {
+        public string eventName { get; set; }
+        public List<EventData> eventData { get; set; }
+        public string haid { get; set; }
+    }
+
+    public class EventData
+    {
+        public string key { get; set; }
+        public int timestamp { get; set; }
+        public string level { get; set; }
+        public string handling { get; set; }
+        public int value { get; set; }
+        public string unit { get; set; }
+    }
+    
     // AccessToken 
     static public AccessToken oAccessToken = new AccessToken();
     // Home Appliances
@@ -483,6 +502,69 @@ public class HomeConnectHttpClient
             catch (Exception e)
             {
                 throw e;                
+            }
+        }
+    }
+    /// <summary>
+    /// Consume all events on appliance
+    /// There are various types of events happening, NOTIFIY etc.
+    /// </summary>
+    /// <param name="accessToken"></param>
+    /// <param name="haid"></param>
+    /// <returns>No return value</returns>
+    public async Task GetStreamOfEvents(string accessToken, string haid)
+    {
+        using (HttpClient client = new HttpClient())
+        {
+            try
+            {
+                // Infinite streaming of data
+                client.Timeout = TimeSpan.FromMilliseconds(Timeout.Infinite);
+
+                client.BaseAddress = baseUri;
+                client.DefaultRequestHeaders.Accept.Clear();
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                var request = new HttpRequestMessage(HttpMethod.Get, "/api/homeappliances/" + haid + "/events");
+                using (var response = await client.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead))
+                {
+
+                    using (var body = await response.Content.ReadAsStreamAsync())
+                    using (var reader = new StreamReader(body))
+                        while (!reader.EndOfStream)
+                        {
+                            string data = reader.ReadLine();
+
+                            if (data.Contains("event:"))
+                            {
+                                string[] split = Regex.Split(data, "event: ");
+                                string splitEventName = split[1];
+                            }
+                            if (data.Contains("data:"))
+                            {
+                                List<EventData> listEventData = new List<EventData>();
+                                string[] split = Regex.Split(data, "data: ");
+                                string jsonString = split[1];
+                                var items = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonString)["items"];
+                                listEventData = JsonConvert.DeserializeObject<List<EventData>>(items.ToString());
+                                foreach (var ev in listEventData)
+                                {
+                                }
+                            }
+                            if (data.Contains("id:"))
+                            {
+                                string[] split = Regex.Split(data, "id: ");
+                                string splitId = split[1];
+                            }
+                        }
+                }
+            }
+            catch (Exception e)
+            {
+                throw e;
             }
         }
     }
